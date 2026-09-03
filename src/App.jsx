@@ -17,6 +17,11 @@ const PERSIST_KEYS = [
   'msCriadoEm', 'msUltimaEdicaoEm', 'ms', 'renov',
   'roles', 'longos', 'curtos', 'acts',
 ];
+// O mesmo, menos a conta — a conta (email/hash/mustChangePassword) tem o
+// seu próprio lugar no /api/account (o "registo"); isto aqui é só o
+// conteúdo ("data") que viaja com o registo, para sobreviver a uma cache
+// limpa ou a abrir a app noutro aparelho.
+const DATA_SYNC_KEYS = PERSIST_KEYS.filter(k => k !== 'auth');
 
 // Conta única, sem servidor: isto NÃO é segurança a sério — é só um
 // bloqueio de ecrã. A palavra-passe fica com hash (SHA-256 + sal fixo) no
@@ -118,14 +123,78 @@ class App extends React.Component {
 
   uid() { return 'x' + Math.random().toString(36).slice(2, 8); }
   flash(msg) { clearTimeout(this._t); this.setState({ toast: msg }); this._t = setTimeout(() => this.setState({ toast: null }), 2200); }
-  componentDidMount() { this.sincronizarPush(); }
+  componentDidMount() {
+    this.sincronizarPush();
+    // Se a sessão ainda estiver válida (não limpou a cache), aproveita para
+    // trazer a versão mais recente do servidor — útil ao abrir a app
+    // noutro aparelho, ou depois de a ter usado noutro sítio.
+    if (this.state.stage === 'app') this.sincronizarConta(this.state.auth.passHash, this.state.auth, { pull: true });
+  }
   componentDidUpdate() {
     clearTimeout(this._saveT);
-    this._saveT = setTimeout(() => { savePersisted(this.state); this.sincronizarPush(); }, 300);
+    this._saveT = setTimeout(() => {
+      savePersisted(this.state);
+      this.sincronizarPush();
+      if (this.state.stage === 'app') this.sincronizarConta(this.state.auth.passHash, this.state.auth);
+    }, 300);
   }
   componentWillUnmount() {
     clearTimeout(this._t); clearTimeout(this._n); clearTimeout(this._saveT);
     savePersisted(this.state);
+  }
+
+  // --- Conta e dados no servidor -----------------------------------------
+  // Sem isto, limpar a cache do telemóvel (ou trocar de aparelho) apaga
+  // tudo — o localStorage é só do próprio browser. `/api/account` guarda
+  // uma cópia no Vercel Blob, protegida pelo hash da palavra-passe atual
+  // (enviado como Authorization: Bearer). Não é uma conta a sério (não há
+  // múltiplos utilizadores nem recuperação de senha por email), mas chega
+  // para uma pessoa só não perder o que escreveu.
+  async sincronizarConta(bearerHash, authObj, { pull = false } = {}) {
+    try {
+      if (pull) {
+        const res = await fetch('/api/account', { headers: { Authorization: `Bearer ${bearerHash}` } });
+        if (!res.ok) return false;
+        const body = await res.json();
+        if (body.exists && body.data) this.setState(body.data);
+        return true;
+      }
+      const data = {};
+      DATA_SYNC_KEYS.forEach(k => { data[k] = this.state[k]; });
+      await fetch('/api/account', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${bearerHash}` },
+        body: JSON.stringify({ email: authObj.email, passHash: authObj.passHash, mustChangePassword: authObj.mustChangePassword, data }),
+      });
+      return true;
+    } catch {
+      return false; // sem rede — fica só local até à próxima sincronização
+    }
+  }
+  // Chamado quando o login falha localmente: pode ser mesmo errado, ou a
+  // cache pode ter sido limpa (o que repõe a conta de fábrica no telemóvel,
+  // já sem ligação com a palavra-passe real). Antes de desistir, pergunta
+  // ao servidor se esse email + palavra-passe correspondem à conta real.
+  async tentarRecuperarDoServidor(email, hash) {
+    try {
+      const res = await fetch('/api/account', { headers: { Authorization: `Bearer ${hash}` } });
+      if (!res.ok) return false;
+      const body = await res.json();
+      if (!body.exists || body.email.trim().toLowerCase() !== email.trim().toLowerCase()) return false;
+      const dados = body.data || {};
+      const primeiraVez = dados.msCriadoEm == null;
+      this.setState({
+        ...dados,
+        auth: { email: body.email, passHash: hash, mustChangePassword: !!body.mustChangePassword },
+        stage: body.mustChangePassword ? 'trocarSenha' : 'app',
+        tab: (!body.mustChangePassword && primeiraVez) ? 'missao' : (dados.tab || 'semana'),
+        loginSenhaInput: '',
+      });
+      this.flash('Sessão e dados recuperados do servidor');
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   // --- Notificações push -----------------------------------------------
@@ -373,11 +442,18 @@ class App extends React.Component {
       entrar: async () => {
         const emailOk = s.loginEmailInput.trim().toLowerCase() === s.auth.email.trim().toLowerCase();
         const hash = await hashPassword(s.loginSenhaInput);
-        if (!emailOk || hash !== s.auth.passHash) { this.flash('Email ou palavra-passe incorretos'); return; }
-        if (s.auth.mustChangePassword) { this.setState({ stage: 'trocarSenha' }); return; }
-        const primeiraVez = s.msCriadoEm == null;
-        this.setState({ stage: 'app', tab: primeiraVez ? 'missao' : s.tab, loginSenhaInput: '' });
-        this.flash('Sessão iniciada neste iPhone');
+        if (emailOk && hash === s.auth.passHash) {
+          if (s.auth.mustChangePassword) { this.setState({ stage: 'trocarSenha' }); return; }
+          const primeiraVez = s.msCriadoEm == null;
+          this.setState({ stage: 'app', tab: primeiraVez ? 'missao' : s.tab, loginSenhaInput: '' });
+          this.flash('Sessão iniciada neste iPhone');
+          return;
+        }
+        // Falhou aqui — pode ser mesmo errado, ou a cache foi limpa (repõe
+        // a conta de fábrica neste telemóvel). Confirma com o servidor
+        // antes de recusar.
+        const recuperado = await this.tentarRecuperarDoServidor(s.loginEmailInput, hash);
+        if (!recuperado) this.flash('Email ou palavra-passe incorretos');
       },
 
       novaSenhaInput: s.novaSenhaInput,
@@ -390,12 +466,16 @@ class App extends React.Component {
         if (nova !== s.confirmarSenhaInput) { this.flash('As palavras-passe não coincidem'); return; }
         const hash = await hashPassword(nova);
         const primeiraVez = s.msCriadoEm == null;
+        const novoAuth = { ...s.auth, passHash: hash, mustChangePassword: false };
         this.setState({
-          auth: { ...s.auth, passHash: hash, mustChangePassword: false },
+          auth: novoAuth,
           stage: 'app', tab: primeiraVez ? 'missao' : s.tab,
           novaSenhaInput: '', confirmarSenhaInput: '', loginSenhaInput: '',
         });
         this.flash('Palavra-passe alterada');
+        // Autoriza-se com o hash antigo (ou, na primeira vez, o servidor
+        // ainda não tem conta nenhuma e aceita sem perguntar).
+        this.sincronizarConta(s.auth.passHash, novoAuth);
       },
       cancelarTrocaSenha: () => this.setState({ stage: 'login', novaSenhaInput: '', confirmarSenhaInput: '', loginSenhaInput: '' }),
 

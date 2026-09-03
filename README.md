@@ -152,6 +152,31 @@ debounced (300ms) em `componentDidUpdate`.
 Para recomeçar do zero, apagar a chave no DevTools:
 `localStorage.removeItem('agenda-semanal:v1')`.
 
+### Cópia no servidor (sobrevive a limpar a cache)
+
+O `localStorage` é só do telemóvel — limpar dados do Safari, desinstalar a
+app, ou abrir noutro aparelho, apaga tudo. Por isso, sempre que os dados
+mudam (o mesmo debounce de 300ms) e sempre que a palavra-passe é definida,
+`sincronizarConta()` envia uma cópia para `api/account.js` (guardada no
+mesmo Vercel Blob das notificações). A autorização é o hash da palavra-passe
+atual, enviado como `Authorization: Bearer <hash>` — quem souber a
+palavra-passe da conta consegue puxar os dados de volta.
+
+Fluxo de recuperação: se o login falhar localmente (`entrar()` em
+`App.jsx`), antes de recusar a app pergunta ao servidor
+(`tentarRecuperarDoServidor`) se aquele email + palavra-passe correspondem
+à conta real — se sim, repõe sessão e dados a partir do servidor. É assim
+que limpar a cache do telemóvel deixa de significar perder tudo: basta
+voltar a entrar com a palavra-passe atual.
+
+**Limitação conhecida**: como não há um verdadeiro sistema de contas (sem
+recuperação de palavra-passe por email, sem múltiplos utilizadores), se
+limpar a cache e introduzir a palavra-passe de fábrica (`12345`) em vez da
+atual, a app entra num estado local novo e vazio em vez de recusar — não
+expõe os dados reais (a leitura no servidor continua a exigir a palavra-passe
+verdadeira), mas também não avisa que essa não é a palavra-passe certa.
+Convém lembrar-se da palavra-passe atual.
+
 ## Estrutura do App.jsx
 
 Ver a explicação detalhada em `../codigo/README.md` (recorrência, chaves de

@@ -8,7 +8,11 @@ import { put, get, del as blobDel } from '@vercel/blob';
 const PREFIX = 'kv/';
 
 export async function kvGet(key) {
-  const res = await get(PREFIX + key + '.json', { access: 'private' });
+  // useCache:false — isto guarda coisas como "já enviei este aviso?" e a
+  // conta atual; uma leitura da cache da CDN (até 1 min a refletir uma
+  // escrita) pode reenviar uma notificação ou rejeitar um login que acabou
+  // de mudar a palavra-passe. Este KV é pouco lido, o custo é desprezável.
+  const res = await get(PREFIX + key + '.json', { access: 'private', useCache: false });
   if (!res) return null;
   const text = await new Response(res.stream).text();
   return JSON.parse(text);
