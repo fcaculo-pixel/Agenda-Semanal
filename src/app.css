@@ -36,6 +36,15 @@ a:hover { color: var(--color-accent-900); }
     --app-header-pt: calc(env(safe-area-inset-top, 0px) + 14px);
     --app-tabbar-pb: calc(env(safe-area-inset-bottom, 0px) + 10px);
   }
+
+  /* O Safari do iPhone dá zoom sozinho ao focar um campo com letra
+     abaixo de 16px (para conseguir ler) — e depois é preciso desfazer
+     esse zoom à mão. Campos de texto/textarea têm 13-14px no design;
+     16px aqui evita o zoom automático sem mudar o resto do ecrã. */
+  .app-mobile-shell input.input,
+  .app-mobile-shell textarea.input {
+    font-size: 16px !important;
+  }
 }
 
 /* Estados :hover/:active/:focus vindos do prototipo.
