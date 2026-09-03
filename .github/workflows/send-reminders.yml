@@ -1,0 +1,18 @@
+name: Send reminders
+
+# Substitui o Vercel Cron (bloqueado no plano Hobby a mais de 1x/dia).
+# O GitHub Actions só bate à porta do endpoint a cada 15 min — toda a
+# lógica de "o que avisar e quando" continua em api/send-reminders.js.
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Chamar /api/send-reminders
+        run: |
+          curl -sf -X GET "https://agenda-semanal-fcpp.vercel.app/api/send-reminders" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"

@@ -1,0 +1,48 @@
+/* Estilos globais da app.
+   Os tokens (cores, tipos, componentes .btn/.card/.blueprint/.tag)
+   vivem em industry.css — nao duplicar aqui. */
+
+body { margin: 0; background: var(--color-bg); }
+a { color: var(--color-accent-700); }
+a:hover { color: var(--color-accent-900); }
+.scr::-webkit-scrollbar { width: 0; height: 0; }
+
+#root { min-height: 100vh; }
+
+/* Duas apresentações do mesmo ecrã (ver App.jsx: `screen`):
+   .app-mobile-shell  — ecrã cheio, sem moldura, para telemóvel real (ou PWA instalada);
+   .app-desktop-shell — a demo atual, com a moldura de iPhone decorativa, para browser de secretária.
+   A troca é só CSS: <768px mostra a mobile, o resto mostra a desktop. */
+.app-mobile-shell { display: none; }
+.app-desktop-shell { display: flex; }
+
+.app-screen { --app-header-pt: 56px; --app-tabbar-pb: 26px; }
+
+@media (max-width: 767px) {
+  .app-mobile-shell {
+    display: block;
+    height: 100dvh;
+    width: 100%;
+    overflow: hidden;
+  }
+  /* !important: o elemento tem display:flex inline (era o único ecrã
+     antes desta mudança) — só !important bate um style inline. */
+  .app-desktop-shell { display: none !important; }
+
+  /* Sem a moldura decorativa, o espaço reservado ao "notch" falso vira
+     espaço reservado ao notch/Dynamic Island real (env(safe-area-inset-*),
+     só não-zero com viewport-fit=cover no index.html). */
+  .app-mobile-shell .app-screen {
+    --app-header-pt: calc(env(safe-area-inset-top, 0px) + 14px);
+    --app-tabbar-pb: calc(env(safe-area-inset-bottom, 0px) + 10px);
+  }
+}
+
+/* Estados :hover/:active/:focus vindos do prototipo.
+   Levam !important porque o estado base e um style inline. */
+[data-xho="1"]:hover { background: color-mix(in srgb,var(--color-text) 6%,transparent) !important; }
+[data-xho="2"]:hover { background: color-mix(in srgb,var(--color-accent) 14%,transparent) !important; }
+[data-xho="3"]:hover { border-color: var(--color-accent) !important; color: var(--color-accent-700) !important; }
+[data-xho="4"]:hover { background: color-mix(in srgb,var(--color-text) 5%,transparent) !important; }
+[data-xho="5"]:hover { border-color: var(--color-accent) !important; background: color-mix(in srgb,var(--color-accent) 7%,transparent) !important; }
+[data-xho="6"]:hover { background: color-mix(in srgb,var(--color-accent) 10%,transparent) !important; }
